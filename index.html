@@ -108,23 +108,18 @@
     padding: 30px;
   }
 
-  /* ── High Scores List ── */
-  .score-list {
-    background: rgba(255,255,255,0.05);
+  /* ── Dev Tools ── */
+  .dev-tools {
+    margin-top: 20px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.05);
     border-radius: 12px;
-    padding: 15px;
-    width: 100%;
-    max-width: 300px;
-    list-style: none;
-    margin: 10px 0;
-  }
-  .score-item {
     display: flex;
-    justify-content: space-between;
-    padding: 5px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    font-size: 14px;
+    align-items: center;
+    gap: 10px;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
   }
+  #devLevelInput { width: 70px; padding: 6px; border-radius: 6px; border: none; text-align: center; font-family: 'Fredoka One'; font-size: 16px; }
 
   #startScreen {
     background: radial-gradient(ellipse at center, #1e003a 0%, #0a000f 100%);
@@ -376,6 +371,12 @@
       <span>↑</span> أو <span>W</span> أو <span>مسافة</span> للقفز
     </div>
     <button class="btn btn-primary" id="startBtn">ابدأ اللعبة!</button>
+
+    <div class="dev-tools">
+      <label style="color:rgba(255,255,255,0.5); font-size: 13px;">نمط المطورين (تخطي للمرحلة):</label>
+      <input type="number" id="devLevelInput" value="1" min="1">
+      <button class="btn btn-gold" id="devJumpBtn" style="padding: 8px 20px; font-size: 14px;">تجربة ⚡</button>
+    </div>
   </div>
 
   <!-- Level Transition -->
@@ -431,6 +432,7 @@ const AudioEngine = {
   init() { if(!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); },
   play(freq, type, duration, vol=0.1) {
     this.init();
+    if(this.ctx.state === 'suspended') this.ctx.resume();
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = type;
@@ -445,22 +447,20 @@ const AudioEngine = {
   coin() { this.play(800, 'sine', 0.1, 0.05); setTimeout(()=>this.play(1200, 'sine', 0.1, 0.05), 50); },
   hurt() { this.play(150, 'sawtooth', 0.3, 0.15); },
   life() { this.play(600, 'sine', 0.4); setTimeout(()=>this.play(900, 'sine', 0.4), 100); },
-  win() { this.play(500, 'square', 0.5); },
-  spring() { this.play(600, 'square', 0.3); },
-  fall() { this.play(200, 'sine', 0.4); }
+  win() { this.play(500, 'square', 0.5); }
 };
 
 // ── Constants ────────────────────────────────────────────────
 const TILE   = 42;
-const GRAV   = 0.65; // Improved gravity
-const SPEED  = 5.2;  // Realistic roll speed
+const GRAV   = 0.65;
+const SPEED  = 5.2;
 const JUMP_V = -14.5;
-const FRICTION = 0.85; // Ground friction
-const AIR_RES  = 0.98; // Air resistance
+const FRICTION = 0.85;
+const AIR_RES  = 0.98;
 const COLS_SCREEN = Math.ceil(CW / TILE) + 2;
 
 // ── Game State ───────────────────────────────────────────────
-let state = 'start'; // start | playing | dead | levelclear | gameover
+let state = 'start';
 let level = 1, score = 0, lives = 3, lastLifeScore = 0;
 let gameStartTime = 0;
 let platforms = [], spikes = [], coins = [], enemies = [], decorations = [];
@@ -491,18 +491,6 @@ const touched = { left: false, right: false, jump: false };
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (['Space','ArrowUp','ArrowLeft','ArrowRight','ArrowDown'].includes(e.code)) e.preventDefault();
-
-  // السماح لزر المسافة ببدء اللعبة أو المرحلة بدلاً من الماوس
-  if (e.code === 'Space') {
-    AudioEngine.init(); // تفعيل الصوت عند أول تفاعل
-    if (document.getElementById('startScreen').style.display === 'flex' || 
-        document.getElementById('gameoverScreen').style.display === 'flex') {
-      startFresh();
-    } else if (document.getElementById('levelScreen').style.display === 'flex') {
-      showScreen(null);
-      state = 'playing';
-    }
-  }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
@@ -542,6 +530,9 @@ const AI = {
     const coinDensity  = 0.3;
 
     worldWidth = worldCols * TILE;
+
+    // مخرجات للمطورين في الكونسول لمراقبة الصعوبة
+    console.log(`%c[AI DEV] Level ${lvl} generated:`, 'color: #ffd700; font-weight: bold', { gapChance, spikeChance, enemyCount, floatCount });
 
     platforms = []; spikes = []; coins = []; enemies = []; decorations = [];
 
@@ -733,7 +724,6 @@ function update(dt) {
   P.x += P.vx * dt;
   P.y += P.vy * dt;
 
-  // Extra Life every 3000 points
   if (score >= lastLifeScore + 3000) {
     lives++;
     lastLifeScore += 3000;
@@ -757,7 +747,6 @@ function update(dt) {
         if (p.fallTimer <= 0) {
           p.fallen = true;
           p.alpha = 0;
-          AudioEngine.fall(); // صوت عند اختفاء المنصة
           // Reset after 4s
           setTimeout(() => { p.fallen = false; p.fallTimer = 0; p.y = p._origY || p.y; p.alpha = 1; }, 4000);
         }
@@ -784,7 +773,6 @@ function update(dt) {
         P.vy = JUMP_V * 1.55;
         P.jumps = 0;
         p.springAnim = 1;
-        AudioEngine.spring(); // صوت النطنيطة
         spawnParticles(P.x + P.w/2, P.y + P.h, 10, '#ffd70099', 5);
       }
       if (p.moving) P.x += p.speed * p.dir * dt;
@@ -846,7 +834,7 @@ function update(dt) {
         P.vy = JUMP_V * 0.6;
         score += 50;
         spawnParticles(e.x + e.w/2, e.y + e.h/2, 12, '#ff444499', 6);
-        AudioEngine.coin(); 
+        AudioEngine.coin();
         updateHUD();
       } else {
         takeDamage();
@@ -913,7 +901,6 @@ function update(dt) {
   }
   particles = particles.filter(p => p.life > 0);
 
-  // ── Timer Update ──
   const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
   const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
   const s = Math.floor(elapsed % 60).toString().padStart(2, '0');
@@ -1338,12 +1325,7 @@ function spawnParticles(x, y, count, color, r) {
 function updateHUD() {
   document.getElementById('levelBadge').textContent = level;
   document.getElementById('scoreBadge').textContent = score.toLocaleString();
-  const livesDisplay = document.getElementById('livesDisplay');
-  if (lives <= 5) {
-    livesDisplay.textContent = '❤️'.repeat(lives);
-  } else {
-    livesDisplay.textContent = '❤️ x ' + lives;
-  }
+  document.getElementById('livesDisplay').textContent = lives <= 5 ? '❤️'.repeat(lives) : '❤️ x ' + lives;
 }
 
 function saveHighScore(newScore) {
@@ -1352,14 +1334,12 @@ function saveHighScore(newScore) {
   scores.sort((a,b) => b.score - a.score);
   scores = scores.slice(0, 5);
   localStorage.setItem('redball_scores', JSON.stringify(scores));
-  
   const list = document.getElementById('highScoreList');
   list.innerHTML = scores.map(s => `
     <li class="score-item">
       <span>${s.date}</span>
       <span style="color:var(--gold)">${s.score.toLocaleString()}</span>
-    </li>
-  `).join('');
+    </li>`).join('');
 }
 
 function showScreen(id) {
@@ -1418,6 +1398,25 @@ document.getElementById('goBtn').addEventListener('click', () => {
   state = 'playing';
 });
 
+document.getElementById('devJumpBtn').addEventListener('click', () => {
+  const targetLevel = parseInt(document.getElementById('devLevelInput').value) || 1;
+  level = targetLevel;
+  score = 0; 
+  lives = 3; 
+  lastLifeScore = 0;
+  gameStartTime = Date.now();
+  AudioEngine.init();
+  P.maxJumps = 2;
+  const msg = AI.generate(level);
+  respawnPlayer();
+  camera.x = 0;
+  particles = [];
+  updateHUD();
+  document.getElementById('levelNum').textContent = level;
+  document.getElementById('aiMsg').innerHTML = msg;
+  showScreen('levelScreen');
+});
+
 // ═══════════════════════════════════════════════════════════════
 //  GAME LOOP
 // ═══════════════════════════════════════════════════════════════
@@ -1439,5 +1438,3 @@ bgTheme = { sky1: '#87ceeb', sky2: '#d4f0ff', ground: '#43a047', dirt: '#5d4037'
 showScreen('startScreen');
 requestAnimationFrame(loop);
 </script>
-</body>
-</html>
